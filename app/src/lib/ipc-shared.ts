@@ -9,6 +9,12 @@ import { WindowState } from './window-state'
 import { IMenu } from '../models/app-menu'
 import { ILaunchStats } from './stats'
 import { URLActionType } from './parse-app-url'
+import type {
+  IExternalCLIProviderConfig,
+  IOpenAICompatProviderConfig,
+} from './ai-summary/config'
+import type { AIProviderIPCResult } from './ai-summary/provider'
+import type { IRepoRulesMetadataRule } from '../models/repo-rules'
 import { Architecture } from './get-architecture'
 import { EndpointToken } from './endpoint-token'
 import { PathType } from '../ui/lib/app-proxy'
@@ -87,6 +93,8 @@ export type RequestChannels = {
   'show-installing-update': () => void
   'install-windows-cli': () => void
   'uninstall-windows-cli': () => void
+  'ai-summary-cli-cancel': (runId: string) => void
+  'ai-summary-openai-cancel': (runId: string) => void
 }
 
 /**
@@ -137,4 +145,24 @@ export type RequestResponseChannels = {
   ) => Promise<string | null>
   'get-notifications-permission': () => Promise<DesktopNotificationPermission>
   'request-notifications-permission': () => Promise<boolean>
+  'ai-summary-cli-run': (
+    config: IExternalCLIProviderConfig,
+    diff: string,
+    rules: ReadonlyArray<IRepoRulesMetadataRule>,
+    repositoryPath: string,
+    runId: string
+  ) => Promise<AIProviderIPCResult>
+  'ai-summary-cli-test': (
+    config: IExternalCLIProviderConfig
+  ) => Promise<AIProviderIPCResult>
+  'ai-summary-openai-run': (
+    config: IOpenAICompatProviderConfig,
+    diff: string,
+    rules: ReadonlyArray<IRepoRulesMetadataRule>,
+    repositoryPath: string,
+    runId: string
+  ) => Promise<AIProviderIPCResult>
+  'ai-summary-openai-test': (
+    config: IOpenAICompatProviderConfig
+  ) => Promise<AIProviderIPCResult>
 }

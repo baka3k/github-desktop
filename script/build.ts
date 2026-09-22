@@ -53,7 +53,6 @@ import {
 import { updateLicenseDump } from './licenses/update-license-dump'
 import { verifyInjectedSassVariables } from './validate-sass/validate-all'
 import { join } from 'path'
-import assert from 'assert'
 import { copyCopilotDependency } from './copilot'
 
 const isPublishableBuild = isPublishable()
@@ -172,11 +171,6 @@ function packageApp() {
   }
 
   const iconPath = getIconDirectory()
-  const assetsCarPath = join(iconPath, 'Assets.car')
-  assert(
-    existsSync(assetsCarPath),
-    `Unable to find Assets.car at ${assetsCarPath}`
-  )
 
   return packager({
     name: getExecutableName(),
@@ -190,7 +184,6 @@ function packageApp() {
       iconPath,
       process.platform === 'darwin' ? 'icon-logo-legacy.icns' : 'icon-logo'
     ),
-    extraResource: [assetsCarPath],
     dir: outRoot,
     overwrite: true,
     tmpdir: false,

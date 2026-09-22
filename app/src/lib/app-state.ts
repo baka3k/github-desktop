@@ -4,6 +4,7 @@ import type {
   CopilotQuotaSnapshotsByAccount,
 } from './stores/copilot-store'
 import type { IBYOKProvider } from './copilot/byok'
+import type { IAISummaryConfig } from './ai-summary'
 import type { IConflictResolutionModelDisplay } from './copilot/conflict-resolution-model'
 import type {
   IFileResolution,
@@ -435,6 +436,13 @@ export interface IAppState {
    * the user has not configured any custom providers.
    */
   readonly byokProviders: ReadonlyArray<IBYOKProvider>
+
+  /**
+   * Configured AI summary providers (used to generate commit messages).
+   * Always contains at least the implicit Copilot provider so the commit
+   * box button has a fallback to render against.
+   */
+  readonly aiSummaryConfig: IAISummaryConfig
 }
 
 export enum FoldoutType {

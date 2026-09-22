@@ -109,6 +109,8 @@ export enum PopupType {
   BypassPushProtection = 'BypassPushProtection',
   GenerateCommitMessageOverrideWarning = 'GenerateCommitMessageOverrideWarning',
   GenerateCommitMessageDisclaimer = 'GenerateCommitMessageDisclaimer',
+  AISummaryNoProvider = 'AISummaryNoProvider',
+  AISummaryError = 'AISummaryError',
   CopilotConflictResolutionDisclaimer = 'CopilotConflictResolutionDisclaimer',
   HookFailed = 'HookFailed',
   CommitProgress = 'CommitProgress',
@@ -508,6 +510,26 @@ export type PopupDetail =
       // from this popup we will trigger the commit message generation too.
       repository: Repository
       filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+    }
+  | {
+      /**
+       * Shown when the user clicks the AI summary button but no provider is
+       * configured (no Copilot license, no external CLI, no OpenAI
+       * endpoint). Clicking "Configure" opens Preferences at the AI
+       * Summary tab.
+       */
+      type: PopupType.AISummaryNoProvider
+    }
+  | {
+      /**
+       * Shown when the active AI summary provider failed to generate a
+       * commit message (HTTP error, executable missing, invalid output,
+       * …). Carries a user-facing message and the machine-readable error
+       * code for support.
+       */
+      type: PopupType.AISummaryError
+      readonly message: string
+      readonly code?: string
     }
   | {
       type: PopupType.CopilotConflictResolutionDisclaimer

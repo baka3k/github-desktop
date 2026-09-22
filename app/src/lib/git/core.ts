@@ -450,7 +450,7 @@ export function getDescriptionForError(
 ): string | null {
   if (isAuthFailureError(error)) {
     const menuHint = __DARWIN__
-      ? 'GitHub Desktop > Settings.'
+      ? 'baka GitHub Desktop > Settings.'
       : 'File > Options.'
     return `Authentication failed. Some common reasons include:
 

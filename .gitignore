@@ -20,3 +20,28 @@ junit*.xml
 *.swp
 tslint-rules/
 playwright-videos/
+.cache/
+.serena/
+
+# Local agent / harness caches (added by Mavis / Serena / cortext-harness
+# running against this repo). Safe to ignore — regenerable from tooling state.
+.cortext-harness/
+.scratch/
+dist-debug/
+
+# Generated build metadata — produced by clangd / VS Code's "Compile Database"
+# feature. Not source-of-truth; regenerate with `bear` or your editor.
+compile_commands.json
+
+# pnpm is not used by this project (yarn only). The presence of pnpm-lock.yaml
+# alongside yarn.lock usually means a stray editor/IDE accidentally picked the
+# wrong package manager.
+pnpm-lock.yaml
+
+# Work-in-progress feature branches. These folders are part of an ongoing
+# experiment that isn't ready to ship; remove the entry below when the
+# feature lands and the files are tracked.
+app/src/lib/ai-summary/
+app/src/main-process/ai-summary/
+app/test/unit/ai-summary/
+docs/plans/

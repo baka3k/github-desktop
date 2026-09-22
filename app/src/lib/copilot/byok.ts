@@ -2,8 +2,18 @@ import { isIPv4 } from 'net'
 import { TokenStore } from '../stores/token-store'
 import type { ReasoningEffort } from '../stores/copilot-store'
 
-/** Provider type understood by the Copilot SDK BYOK config. */
-export type BYOKProviderType = 'openai' | 'azure' | 'anthropic'
+/**
+ * Provider type understood by the Copilot SDK BYOK config.
+ *
+ * - `openai`: OpenAI itself or any OpenAI-compatible endpoint (LM Studio, vLLM,
+ *   OpenRouter, Groq, Together, etc.).
+ * - `azure`: Azure OpenAI Service.
+ * - `anthropic`: Anthropic Claude API.
+ * - `ollama`: A local Ollama server. It speaks the OpenAI Chat Completions
+ *   wire format on `/v1`, so it is treated as an OpenAI-compatible provider
+ *   with `authKind: 'none'` and no API key.
+ */
+export type BYOKProviderType = 'openai' | 'azure' | 'anthropic' | 'ollama'
 
 /** OpenAI-compatible wire API format. */
 export type BYOKWireApi = 'completions' | 'responses'
@@ -282,7 +292,12 @@ function isBYOKProvider(value: unknown): value is IBYOKProvider {
   ) {
     return false
   }
-  if (p.type !== 'openai' && p.type !== 'azure' && p.type !== 'anthropic') {
+  if (
+    p.type !== 'openai' &&
+    p.type !== 'azure' &&
+    p.type !== 'anthropic' &&
+    p.type !== 'ollama'
+  ) {
     return false
   }
   if (

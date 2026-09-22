@@ -43,6 +43,7 @@ import { Repository } from '../../models/repository'
 import { Notifications } from './notifications'
 import { Accessibility } from './accessibility'
 import { CopilotPreferences } from './copilot'
+import AISummaryPreferences from './ai-summary'
 import type {
   CopilotFeature,
   CopilotModelsByAccount,
@@ -51,6 +52,7 @@ import type {
 } from '../../lib/stores/copilot-store'
 import { getCopilotAccountCacheKey } from '../../lib/stores/copilot-store'
 import type { IBYOKProvider } from '../../lib/copilot/byok'
+import type { IAISummaryConfig } from '../../lib/ai-summary'
 import { PopupType } from '../../models/popup'
 import {
   ICustomIntegration,
@@ -121,6 +123,7 @@ interface IPreferencesProps {
   readonly copilotModelsByAccount: CopilotModelsByAccount
   readonly copilotQuotaSnapshotsByAccount: CopilotQuotaSnapshotsByAccount
   readonly byokProviders: ReadonlyArray<IBYOKProvider>
+  readonly aiSummaryConfig: IAISummaryConfig
   readonly alwaysUseCopilotForConflictResolution: boolean
 }
 
@@ -187,6 +190,7 @@ interface IPreferencesState {
 
   readonly selectedCopilotModelsByAccount: CopilotModelSelectionsByAccount
   readonly alwaysUseCopilotForConflictResolution: boolean
+  readonly aiSummaryConfig: IAISummaryConfig
   readonly selectedDateFormat?: DateFormat
   readonly selectedTimeFormat?: TimeFormat
   readonly selectedNumberFormat?: INumberFormat
@@ -258,6 +262,7 @@ export class Preferences extends React.Component<
       selectedCopilotModelsByAccount: this.props.selectedCopilotModelsByAccount,
       alwaysUseCopilotForConflictResolution:
         this.props.alwaysUseCopilotForConflictResolution,
+      aiSummaryConfig: this.props.aiSummaryConfig,
       selectedDateFormat: getDateFormatPreference(),
       selectedTimeFormat: getTimeFormatPreference(),
       selectedNumberFormat: getNumberFormatPreference(),
@@ -360,6 +365,9 @@ export class Preferences extends React.Component<
           this.props.alwaysUseCopilotForConflictResolution,
       })
     }
+    if (prevProps.aiSummaryConfig !== this.props.aiSummaryConfig) {
+      this.setState({ aiSummaryConfig: this.props.aiSummaryConfig })
+    }
   }
 
   private onCancel = () => {
@@ -402,6 +410,10 @@ export class Preferences extends React.Component<
                 Copilot
               </span>
             )}
+            <span id={this.getTabId(PreferencesTab.AISummary)}>
+              <Octicon className="icon" symbol={octicons.copilot} />
+              AI Summary
+            </span>
             <span id={this.getTabId(PreferencesTab.Git)}>
               <Octicon className="icon" symbol={octicons.gitCommit} />
               Git
@@ -446,6 +458,9 @@ export class Preferences extends React.Component<
         break
       case PreferencesTab.Copilot:
         suffix = 'copilot'
+        break
+      case PreferencesTab.AISummary:
+        suffix = 'ai-summary'
         break
       case PreferencesTab.Git:
         suffix = 'git'
@@ -590,6 +605,16 @@ export class Preferences extends React.Component<
             }
             onConfigureCustomProviders={this.onConfigureCustomProviders}
             onConfigureModels={this.onConfigureCopilotModels}
+          />
+        )
+        break
+      case PreferencesTab.AISummary:
+        View = (
+          <AISummaryPreferences
+            config={this.state.aiSummaryConfig}
+            onConfigChanged={this.onAISummaryConfigChanged}
+            onDeleteProvider={this.onDeleteAISummaryProvider}
+            onTestProvider={this.onTestAISummaryProvider}
           />
         )
         break
@@ -955,6 +980,19 @@ export class Preferences extends React.Component<
     checked: boolean
   ) => {
     this.setState({ alwaysUseCopilotForConflictResolution: checked })
+  }
+
+  private onAISummaryConfigChanged = (config: IAISummaryConfig) => {
+    this.setState({ aiSummaryConfig: config })
+    this.props.dispatcher.setAISummaryConfig(config)
+  }
+
+  private onDeleteAISummaryProvider = (id: string) => {
+    void this.props.dispatcher.deleteAISummaryProvider(id)
+  }
+
+  private onTestAISummaryProvider = async (id: string) => {
+    return this.props.dispatcher.testAISummaryProvider(id)
   }
 
   private shouldShowBYOKSettings(): boolean {

@@ -115,6 +115,8 @@ function getBaseUrlPlaceholder(type: BYOKProviderType): string {
       return 'https://<resource>.openai.azure.com/'
     case 'anthropic':
       return 'https://api.anthropic.com'
+    case 'ollama':
+      return 'http://localhost:11434/v1'
   }
 }
 export class EditCopilotBYOKProviderDialog extends React.Component<
@@ -198,6 +200,7 @@ export class EditCopilotBYOKProviderDialog extends React.Component<
             <option value="openai">OpenAI / OpenAI-compatible</option>
             <option value="azure">Azure</option>
             <option value="anthropic">Anthropic</option>
+            <option value="ollama">Ollama (local)</option>
           </Select>
         </Row>
         <Row>
@@ -209,7 +212,7 @@ export class EditCopilotBYOKProviderDialog extends React.Component<
             required={true}
           />
         </Row>
-        {this.state.type === 'openai' && (
+        {(this.state.type === 'openai' || this.state.type === 'ollama') && (
           <Row>
             <Select
               label={__DARWIN__ ? 'API Format' : 'API format'}
@@ -217,7 +220,9 @@ export class EditCopilotBYOKProviderDialog extends React.Component<
               onChange={this.onWireApiChanged}
             >
               <option value="completions">Chat completions (default)</option>
-              <option value="responses">Responses (GPT-5 series)</option>
+              {this.state.type === 'openai' && (
+                <option value="responses">Responses (GPT-5 series)</option>
+              )}
             </Select>
           </Row>
         )}
@@ -318,7 +323,15 @@ export class EditCopilotBYOKProviderDialog extends React.Component<
   private onNameChanged = (name: string) => this.setState({ name })
 
   private onTypeChanged = (event: React.FormEvent<HTMLSelectElement>) => {
-    this.setState({ type: event.currentTarget.value as BYOKProviderType })
+    const nextType = event.currentTarget.value as BYOKProviderType
+    // Ollama is a local server and ships without an API key. Switching the
+    // provider type to `ollama` therefore flips authentication to `none`
+    // so the user does not have to remember to disable the API key field.
+    if (nextType === 'ollama' && this.state.authKind !== 'none') {
+      this.setState({ type: nextType, authKind: 'none' as BYOKAuthKind })
+    } else {
+      this.setState({ type: nextType })
+    }
   }
 
   private onBaseUrlChanged = (baseUrl: string) => this.setState({ baseUrl })
@@ -403,7 +416,9 @@ export class EditCopilotBYOKProviderDialog extends React.Component<
       baseUrl: this.state.baseUrl.trim(),
       authKind: this.state.authKind,
       models: trimmedModels,
-      ...(this.state.type === 'openai' ? { wireApi: this.state.wireApi } : {}),
+      ...(this.state.type === 'openai' || this.state.type === 'ollama'
+        ? { wireApi: this.state.wireApi }
+        : {}),
       ...(this.state.type === 'azure' &&
       this.state.azureApiVersion.trim() !== ''
         ? { azureApiVersion: this.state.azureApiVersion.trim() }

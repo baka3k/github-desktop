@@ -25,8 +25,8 @@ type CopilotButtonProps = {
 }
 
 type CommitMessageTestInstance = {
-  readonly renderCopilotButton: () => React.ReactElement | null
-  readonly onCopilotButtonClick: (
+  readonly renderAIButton: () => React.ReactElement | null
+  readonly onAIButtonClick: (
     event: Pick<React.MouseEvent<HTMLButtonElement>, 'preventDefault'>
   ) => Promise<void>
 }
@@ -144,26 +144,26 @@ function isElementWithCopilotButtonProps(
   return React.isValidElement(node) && node.props.className === 'copilot-button'
 }
 
-function getCopilotButtonProps(
+function getAIButtonProps(
   component: CommitMessageTestInstance
 ): CopilotButtonProps {
-  const button = component.renderCopilotButton()
+  const button = component.renderAIButton()
   if (button === null) {
-    throw new Error('Expected Copilot button to render')
+    throw new Error('Expected AI button to render')
   }
 
   const buttonElement = React.Children.toArray(button.props.children).find(
     isElementWithCopilotButtonProps
   )
   if (buttonElement === undefined) {
-    throw new Error('Expected Copilot button element to render')
+    throw new Error('Expected AI button element to render')
   }
 
   return buttonElement.props
 }
 
-async function clickCopilotButton(component: CommitMessageTestInstance) {
-  await component.onCopilotButtonClick({
+async function clickAIButton(component: CommitMessageTestInstance) {
+  await component.onAIButtonClick({
     preventDefault: () => {},
   })
 }
@@ -177,7 +177,9 @@ afterEach(() => {
 })
 
 describe('CommitMessage', () => {
-  it('does not allow cancelling commit message generation when the Copilot SDK is disabled', async () => {
+  it('allows cancelling commit message generation regardless of Copilot entitlements', async () => {
+    // Generation can come from any provider (Copilot, OpenAI-compatible,
+    // external CLI), so cancellation is not gated on the Copilot SDK flag.
     delete process.env[PreviewFeaturesEnv]
 
     let cancelCount = 0
@@ -191,36 +193,12 @@ describe('CommitMessage', () => {
       )
     )
 
-    const buttonProps = getCopilotButtonProps(component)
-
-    assert.equal(buttonProps.ariaLabel, 'Generating commit details…')
-    assert.equal(buttonProps.disabled, true)
-
-    await clickCopilotButton(component)
-
-    assert.equal(cancelCount, 0)
-  })
-
-  it('allows cancelling commit message generation when the Copilot SDK is enabled', async () => {
-    process.env[PreviewFeaturesEnv] = '1'
-
-    let cancelCount = 0
-    const component = toTestInstance(
-      new CommitMessage(
-        createProps({
-          onCancelGenerateCommitMessage: () => {
-            cancelCount++
-          },
-        })
-      )
-    )
-
-    const buttonProps = getCopilotButtonProps(component)
+    const buttonProps = getAIButtonProps(component)
 
     assert.equal(buttonProps.ariaLabel, 'Cancel generating commit details')
     assert.equal(buttonProps.disabled, false)
 
-    await clickCopilotButton(component)
+    await clickAIButton(component)
 
     assert.equal(cancelCount, 1)
   })

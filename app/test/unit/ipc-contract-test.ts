@@ -69,6 +69,8 @@ describe('IPC channel contract', () => {
     'show-installing-update',
     'install-windows-cli',
     'uninstall-windows-cli',
+    'ai-summary-cli-cancel',
+    'ai-summary-openai-cancel',
   ] as const
 
   const expectedResponseChannels = [
@@ -100,6 +102,10 @@ describe('IPC channel contract', () => {
     'show-notification',
     'get-notifications-permission',
     'request-notifications-permission',
+    'ai-summary-cli-run',
+    'ai-summary-cli-test',
+    'ai-summary-openai-run',
+    'ai-summary-openai-test',
   ] as const
 
   describe('RequestChannels', () => {

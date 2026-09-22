@@ -35,6 +35,17 @@ import {
   getBYOKSecret,
   parseModelKey,
 } from '../copilot/byok'
+import {
+  type IAISummaryConfig,
+  type IAISummaryProviderConfig,
+  type AIProviderIPCResult,
+  AISummaryService,
+  CopilotDefaultProviderId,
+  getDefaultAISummaryConfig,
+  parseAISummaryConfigOrNull,
+  resolveProviderForRepository,
+} from '../ai-summary'
+import { deleteAISummaryProviderSecret } from '../ai-summary/secrets'
 import { getConflictResolutionModelDisplay } from '../copilot/conflict-resolution-model'
 import type {
   CopilotModelRequest,
@@ -183,7 +194,6 @@ import { assertNever, fatalError, forceUnwrap } from '../fatal-error'
 
 import { formatCommitMessage } from '../format-commit-message'
 import {
-  getAccountForCommitMessageGeneration,
   getAccountForCopilotConflictResolution,
   getAccountForRepository,
 } from '../get-account-for-repository'
@@ -302,6 +312,7 @@ import {
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
 import { BranchPruner } from './helpers/branch-pruner'
 import {
+  enableCommitMessageGeneration,
   enableCopilotConflictResolution,
   enableCopilotSdkCommitMessageGeneration,
   enableCustomIntegration,
@@ -563,6 +574,8 @@ const alwaysShowWorktreeListKey = 'always-show-worktree-list'
 const commitMessageGenerationDisclaimerLastSeenKey =
   'commit-message-generation-disclaimer-last-seen'
 
+const aiSummaryConfigStorageKey = 'ai-summary-config'
+
 const commitMessageGenerationButtonClickedKey =
   'commit-message-generation-button-clicked'
 
@@ -757,6 +770,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     new Map()
   private byokProviders: ReadonlyArray<IBYOKProvider> = []
 
+  private aiSummaryConfig: IAISummaryConfig = getDefaultAISummaryConfig()
+
+  private readonly aiSummaryService: AISummaryService
+
   public constructor(
     private readonly gitHubUserStore: GitHubUserStore,
     private readonly cloningRepositoriesStore: CloningRepositoriesStore,
@@ -772,6 +789,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     private readonly copilotStore: CopilotStore
   ) {
     super()
+
+    this.aiSummaryService = new AISummaryService({
+      copilotStore: this.copilotStore,
+      resolveCopilotModelRequest: async account =>
+        this.resolveCopilotModelRequest(
+          this.getSelectedCopilotModels(account)['commit-message-generation'] ??
+            null
+        ),
+    })
 
     this.showWelcomeFlow = !hasShownWelcomeFlow()
 
@@ -1368,6 +1394,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       copilotModelsByAccount: this.copilotModelsByAccount,
       copilotQuotaSnapshotsByAccount: this.copilotQuotaSnapshotsByAccount,
       byokProviders: this.byokProviders,
+      aiSummaryConfig: this.aiSummaryConfig,
     }
   }
 
@@ -2663,6 +2690,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.loadCopilotModelSelectionsByAccount()
     this.migrateCopilotModelSelections()
     this.byokProviders = loadBYOKProviders()
+    this.aiSummaryConfig = this.loadAISummaryConfig()
 
     this.emitUpdateNow()
 
@@ -3801,7 +3829,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.statsStore.increment('partialCommits')
     }
 
-    if (context.messageGeneratedByCopilot === true) {
+    if (context.messageGeneratedByAi === true) {
       this.statsStore.increment('generateCommitMessageUsedVerbatimCount')
     }
 
@@ -6365,12 +6393,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
   ): Promise<boolean> {
-    const account = getAccountForCommitMessageGeneration(
-      this.accounts,
-      repository
+    const provider = resolveProviderForRepository(
+      this.aiSummaryConfig,
+      { accounts: this.accounts },
+      { id: repository.id }
     )
 
-    if (!account) {
+    if (!provider) {
+      // The "Generate commit message with AI" button is always rendered
+      // so users without a Copilot license can still wire up an external
+      // CLI or OpenAI-compatible provider. When they click the button
+      // with no usable provider, surface a friendly popup pointing to
+      // Preferences → AI Summary rather than silently failing.
+      this._showPopup({ type: PopupType.AISummaryNoProvider })
       return false
     }
 
@@ -6405,32 +6440,59 @@ export class AppStore extends TypedBaseStore<IAppState> {
           return false
         }
 
-        const response = enableCopilotSdkCommitMessageGeneration(account)
-          ? await this.copilotStore.generateCommitMessage(
-              account,
-              diff,
-              repository.path,
-              await this.resolveCopilotModelRequest(
-                this.getSelectedCopilotModels(account)[
-                  'commit-message-generation'
-                ] ?? null
-              ),
+        const result = await this.aiSummaryService.generate(
+          this.aiSummaryConfig,
+          repository,
+          this.accounts,
+          {
+            diff,
+            rules:
               this.repositoryStateCache
                 .get(repository)
                 ?.changesState.currentRepoRulesInfo?.commitMessagePatterns.getRules() ??
-                [],
-              signal
-            )
-          : await API.fromAccount(account).getDiffChangesCommitMessage(diff)
+              [],
+            signal,
+            repositoryPath: repository.path,
+          }
+        )
+
+        if (result.kind === 'cancelled') {
+          this.statsStore.increment('aiSummaryGenerateCancelledCount')
+          return false
+        }
+
+        // The user cancelled while the provider was still finishing —
+        // don't clobber whatever they typed with a late result.
+        if (signal.aborted) {
+          return false
+        }
+
+        if (result.kind === 'error') {
+          this.statsStore.increment('aiSummaryGenerateErrorCount')
+          this._showPopup({
+            type: PopupType.AISummaryError,
+            message: result.userMessage,
+            code: result.code,
+          })
+          return false
+        }
 
         this._setCommitMessage(repository, {
-          summary: response.title,
-          description: response.description,
+          summary: result.value.title,
+          description: result.value.description,
           timestamp: Date.now(),
-          generatedByCopilot: true,
+          generatedByAi: true,
         })
 
         this.statsStore.increment('generateCommitMessageCount')
+        this.statsStore.increment('aiSummaryGenerateCount')
+        this.statsStore.increment(
+          provider.kind === 'copilot'
+            ? 'aiSummaryCopilotGenerateCount'
+            : provider.kind === 'openai-compat'
+            ? 'aiSummaryOpenAICompatGenerateCount'
+            : 'aiSummaryExternalCLIGenerateCount'
+        )
       } catch (e) {
         if (e instanceof CommitMessageGenerationCancelledError) {
           return false
@@ -10454,7 +10516,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     const providerConfig: CopilotProviderConfig = {
-      type: provider.type,
+      // The Copilot SDK only knows about 'openai', 'azure', and 'anthropic'
+      // as wire types. Local Ollama servers speak the OpenAI Chat Completions
+      // API on `/v1`, so we route them through the SDK as `openai` while
+      // keeping the user-facing BYOK type as `ollama` in storage / UI.
+      type: provider.type === 'ollama' ? 'openai' : provider.type,
       baseUrl: provider.baseUrl,
       ...(provider.wireApi ? { wireApi: provider.wireApi } : {}),
       ...(provider.type === 'azure' && provider.azureApiVersion
@@ -10779,6 +10845,228 @@ export class AppStore extends TypedBaseStore<IAppState> {
     setBoolean(showChangesFilterKey, this.showChangesFilter)
     this.updateMenuLabelsForSelectedRepository()
     this.emitUpdate()
+  }
+
+  /**
+   * Loads persisted AI summary provider configuration, falling back to
+   * the implicit Copilot provider if the stored value is missing or
+   * malformed.
+   */
+  private loadAISummaryConfig(): IAISummaryConfig {
+    const raw = localStorage.getItem(aiSummaryConfigStorageKey)
+    const parsed = parseAISummaryConfigOrNull(raw)
+    if (parsed === null) {
+      return getDefaultAISummaryConfig()
+    }
+    return ensureCopilotDefaultPresent(parsed)
+  }
+
+  /** This shouldn't be called directly. See 'Dispatcher'. */
+  public _setAISummaryConfig(config: IAISummaryConfig): void {
+    const withDefault = ensureCopilotDefaultPresent(config)
+    this.aiSummaryConfig = withDefault
+    saveAISummaryConfig(withDefault)
+    this.emitUpdate()
+  }
+
+  public _upsertAISummaryProvider(provider: IAISummaryProviderConfig): void {
+    const current = this.aiSummaryConfig
+    const existingIdx = current.providers.findIndex(p => p.id === provider.id)
+    const providers =
+      existingIdx === -1
+        ? [...current.providers, provider]
+        : current.providers.map((p, i) => (i === existingIdx ? provider : p))
+    const activeProviderId =
+      current.activeProviderId === provider.id
+        ? provider.id
+        : current.activeProviderId
+    this._setAISummaryConfig({ activeProviderId, providers })
+  }
+
+  public async _deleteAISummaryProvider(id: string): Promise<void> {
+    if (id === CopilotDefaultProviderId) {
+      return
+    }
+    const current = this.aiSummaryConfig
+    const providers = current.providers.filter(p => p.id !== id)
+    if (providers.length === current.providers.length) {
+      return
+    }
+    const activeProviderId =
+      current.activeProviderId === id ? null : current.activeProviderId
+    try {
+      await deleteAISummaryProviderSecret(id)
+    } catch {
+      // ignore
+    }
+    this._setAISummaryConfig({ activeProviderId, providers })
+  }
+
+  public _setActiveAISummaryProvider(providerId: string | null): void {
+    const current = this.aiSummaryConfig
+    const nextActive =
+      providerId === null
+        ? null
+        : current.providers.some(p => p.id === providerId)
+        ? providerId
+        : current.activeProviderId
+    if (nextActive === current.activeProviderId) {
+      return
+    }
+    this.aiSummaryConfig = { ...current, activeProviderId: nextActive }
+    saveAISummaryConfig(this.aiSummaryConfig)
+    this.emitUpdate()
+  }
+
+  public _recordAISummaryProviderTestResult(
+    id: string,
+    result:
+      | { readonly kind: 'ok' }
+      | { readonly kind: 'error'; readonly userMessage: string }
+  ): void {
+    const current = this.aiSummaryConfig
+    const providers = current.providers.map(p => {
+      if (p.id !== id) {
+        return p
+      }
+      if (result.kind === 'ok') {
+        return {
+          ...p,
+          lastTestedAt: Date.now(),
+          lastTestStatus: 'ok' as const,
+          lastTestError: null,
+        }
+      }
+      return {
+        ...p,
+        lastTestedAt: Date.now(),
+        lastTestStatus: 'error' as const,
+        lastTestError: result.userMessage,
+      }
+    })
+    this.aiSummaryConfig = { ...current, providers }
+    saveAISummaryConfig(this.aiSummaryConfig)
+    this.emitUpdate()
+  }
+
+  /** Tests a configured provider and records the result. */
+  public async _testAISummaryProvider(
+    id: string
+  ): Promise<AIProviderIPCResult> {
+    const provider = this.aiSummaryConfig.providers.find(p => p.id === id)
+    if (!provider) {
+      const result: AIProviderIPCResult = {
+        kind: 'error',
+        code: 'invalid-config',
+        userMessage: `Provider "${id}" not found.`,
+      }
+      this._recordAISummaryProviderTestResult(id, {
+        kind: 'error',
+        userMessage: result.userMessage,
+      })
+      return result
+    }
+    try {
+      // Copilot connectivity is tested in-process through the store; it
+      // has no dedicated IPC channel. Crucially the outcome is NOT
+      // recorded on the provider: a transient Copilot failure must not
+      // latch `lastTestStatus: 'error'`, which would make the provider
+      // unresolvable even for licensed users. Resolution re-checks the
+      // Copilot license on every generate anyway.
+      if (provider.kind === 'copilot') {
+        const account = this.accounts.find(enableCommitMessageGeneration)
+        if (account === undefined) {
+          return {
+            kind: 'error',
+            code: 'invalid-config',
+            userMessage:
+              'Sign in with a GitHub account that has a Copilot license to test this provider.',
+          }
+        }
+        try {
+          await this.copilotStore.listModels(account)
+          return { kind: 'ok', title: 'OK', description: '' }
+        } catch (e) {
+          return {
+            kind: 'error',
+            code: 'unknown',
+            userMessage:
+              e instanceof Error
+                ? e.message
+                : 'Could not reach GitHub Copilot.',
+          }
+        }
+      }
+      const result = await runTestForProvider(provider)
+      if (result.kind === 'ok') {
+        this._recordAISummaryProviderTestResult(id, { kind: 'ok' })
+        return { kind: 'ok', title: 'OK', description: '' }
+      }
+      if (result.kind === 'cancelled') {
+        return { kind: 'cancelled' }
+      }
+      this._recordAISummaryProviderTestResult(id, {
+        kind: 'error',
+        userMessage: result.userMessage,
+      })
+      return {
+        kind: 'error',
+        code: result.code,
+        userMessage: result.userMessage,
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error'
+      this._recordAISummaryProviderTestResult(id, {
+        kind: 'error',
+        userMessage: message,
+      })
+      return { kind: 'error', code: 'unknown', userMessage: message }
+    }
+  }
+}
+
+function saveAISummaryConfig(config: IAISummaryConfig): void {
+  localStorage.setItem(aiSummaryConfigStorageKey, JSON.stringify(config))
+}
+
+function ensureCopilotDefaultPresent(
+  config: IAISummaryConfig
+): IAISummaryConfig {
+  const hasDefault = config.providers.some(
+    p => p.id === CopilotDefaultProviderId
+  )
+  if (hasDefault) {
+    return config
+  }
+  const fallback = getDefaultAISummaryConfig()
+  const defaultProvider = fallback.providers[0]
+  return {
+    activeProviderId:
+      config.activeProviderId === null
+        ? CopilotDefaultProviderId
+        : config.activeProviderId,
+    providers: [defaultProvider, ...config.providers],
+  }
+}
+
+/**
+ * Tests a configured provider by routing through the main-process IPC
+ * channels. Lives outside the class so the AppStore doesn't have to know
+ * which kind-specific channel to call.
+ */
+async function runTestForProvider(
+  provider: IAISummaryProviderConfig
+): Promise<AIProviderIPCResult> {
+  if (provider.kind === 'external-cli') {
+    return ipcRenderer.invoke('ai-summary-cli-test', provider)
+  }
+  if (provider.kind === 'openai-compat') {
+    return ipcRenderer.invoke('ai-summary-openai-test', provider)
+  }
+  return {
+    kind: 'error',
+    code: 'invalid-config',
+    userMessage: 'This provider kind cannot be tested.',
   }
 }
 

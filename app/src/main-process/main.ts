@@ -748,6 +748,139 @@ app.on('ready', () => {
   ipcMain.handle('request-notifications-permission', async () =>
     requestNotificationsPermission()
   )
+
+  // AI summary providers (Phase 2/3). Main process owns all child
+  // process spawns and outbound HTTP so the renderer never has to deal
+  // with credentials, CORS, or stdio directly. Each run is registered
+  // under a renderer-minted run id with an AbortController so the
+  // renderer can cancel it mid-flight through the `ai-summary-*-cancel`
+  // channels.
+  const aiSummaryHandlers = require('./ai-summary/handlers')
+  const {
+    registerRun,
+    completeRun,
+    cancelRun,
+  } = require('./ai-summary/cancellation')
+  const { parseAIProviderConfig } = require('../lib/ai-summary/parse')
+
+  // Defense in depth: the renderer is trusted to send a well-formed
+  // provider config, but the main process revalidates the shape and
+  // clamps the knobs that could turn into resource abuse (unbounded
+  // timeouts, env var clobbering via apiKeyEnvVar).
+  const MaxTimeoutSeconds = 600
+  const EnvVarNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/
+  const invalidConfigResult = (message: string) => ({
+    kind: 'error' as const,
+    code: 'invalid-config' as const,
+    userMessage: message,
+  })
+  const sanitizeConfig = (config: unknown) => {
+    const parsed = parseAIProviderConfig(config)
+    if (parsed.kind === 'copilot') {
+      return parsed
+    }
+    const timeoutSeconds = Math.max(
+      1,
+      Math.min(MaxTimeoutSeconds, Math.round(parsed.timeoutSeconds || 60))
+    )
+    if (parsed.kind === 'external-cli') {
+      return {
+        ...parsed,
+        timeoutSeconds,
+        apiKeyEnvVar:
+          parsed.apiKeyEnvVar !== null &&
+          EnvVarNamePattern.test(parsed.apiKeyEnvVar)
+            ? parsed.apiKeyEnvVar
+            : null,
+      }
+    }
+    return { ...parsed, timeoutSeconds }
+  }
+
+  ipcMain.handle(
+    'ai-summary-cli-run',
+    async (_, config, diff, rules, repositoryPath, runId) => {
+      let parsedConfig
+      try {
+        parsedConfig = sanitizeConfig(config)
+      } catch (e) {
+        return invalidConfigResult(
+          `Invalid external CLI provider configuration: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        )
+      }
+      const controller = new AbortController()
+      registerRun(runId, controller)
+      try {
+        return await aiSummaryHandlers.runCLISummary({
+          config: parsedConfig,
+          diff,
+          rules,
+          repositoryPath,
+          signal: controller.signal,
+        })
+      } finally {
+        completeRun(runId)
+      }
+    }
+  )
+  ipcMain.handle('ai-summary-cli-test', async (_, config) => {
+    try {
+      return await aiSummaryHandlers.runCLITest({
+        config: sanitizeConfig(config),
+      })
+    } catch (e) {
+      return invalidConfigResult(
+        `Invalid external CLI provider configuration: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
+  })
+  ipcMain.on('ai-summary-cli-cancel', (_, runId) => cancelRun(runId))
+  ipcMain.handle(
+    'ai-summary-openai-run',
+    async (_, config, diff, rules, repositoryPath, runId) => {
+      let parsedConfig
+      try {
+        parsedConfig = sanitizeConfig(config)
+      } catch (e) {
+        return invalidConfigResult(
+          `Invalid OpenAI-compatible provider configuration: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        )
+      }
+      const controller = new AbortController()
+      registerRun(runId, controller)
+      try {
+        return await aiSummaryHandlers.runOpenAICompatSummary({
+          config: parsedConfig,
+          diff,
+          rules,
+          repositoryPath,
+          signal: controller.signal,
+        })
+      } finally {
+        completeRun(runId)
+      }
+    }
+  )
+  ipcMain.handle('ai-summary-openai-test', async (_, config) => {
+    try {
+      return await aiSummaryHandlers.runOpenAICompatTest({
+        config: sanitizeConfig(config),
+      })
+    } catch (e) {
+      return invalidConfigResult(
+        `Invalid OpenAI-compatible provider configuration: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
+  })
+  ipcMain.on('ai-summary-openai-cancel', (_, runId) => cancelRun(runId))
 })
 
 app.on('activate', () => {

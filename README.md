@@ -40,7 +40,7 @@ beta channel to get access to early builds of Desktop:
 The release notes for the latest beta versions are available [here](https://desktop.github.com/release-notes/?env=beta).
 
 ### Past Releases
-You can find past releases at https://desktop.githubusercontent.com. After installation of a past version, the auto update functionality will attempt to download the latest version. 
+You can find past releases at https://desktop.githubusercontent.com. After installation of a past version, the auto update functionality will attempt to download the latest version.
 
 ### Community Releases
 
@@ -86,7 +86,134 @@ If you're looking for something to work on, check out the [help wanted](https://
 
 ## Building Desktop
 
-To setup your development environment for building Desktop, check out: [`setup.md`](./docs/contributing/setup.md).
+The repo ships a top-level `Makefile` that wraps the `yarn` build scripts in
+`package.json`. After cloning the repo, the standard developer loop is:
+
+```shellsession
+$ make install   # install dependencies
+$ make build     # production build (output in out/)
+$ make start     # launch a development build with hot reload
+```
+
+### Available `make` targets
+
+Run `make help` to see the full list. The most common ones:
+
+| Command                 | What it does                                                                |
+|-------------------------|-----------------------------------------------------------------------------|
+| `make help`             | List every available target.                                                |
+| `make install`          | Run `yarn install` to fetch JS dependencies.                                |
+| `make build`            | Production build (`yarn build:prod`). Output goes to `out/`.                |
+| `make build:dev`        | Development build (`yarn build:dev`). Faster, debug-friendly.               |
+| `make start`            | Launch the app from a dev build with hot reload.                            |
+| `make start:prod`       | Launch the app from a production build.                                     |
+| `make package`          | Re-run only the packaging step (assumes `make build` has already run).      |
+| `make test`             | Run unit tests (alias for `make test:unit`).                                |
+| `make test:script`      | Run tests under `script/`.                                                  |
+| `make test:e2e`         | Run the end-to-end Playwright suite (builds first, then runs).              |
+| `make lint`             | Run `prettier --check` + `eslint` over the source tree.                     |
+| `make lint:fix`         | Auto-fix prettier and eslint issues.                                        |
+| `make markdownlint`     | Lint Markdown files.                                                        |
+| `make validate`         | Aggregate check: `lint` + `markdownlint` + `test:script`.                   |
+| `make clean`            | Remove the `out/` directory only.                                           |
+| `make clean:all`        | Remove `out/`, root `node_modules/`, and `app/node_modules/`.               |
+| `make rebuild-hard:dev` | `make clean:all` + `make build:dev` — full clean rebuild.                   |
+| `make rebuild-hard:prod`| `make clean:all` + `make build` — full clean production rebuild.            |
+| `make ci`               | Composite target: `install` + `lint` + `test:script` + `build`.             |
+| `make version-check`    | Validate Node / Yarn / Electron versions match `.tool-versions`.            |
+
+Set `VERBOSE=1` to print every command as it runs (`VERBOSE=1 make build`).
+
+The `Makefile` is intentionally a thin wrapper around `yarn` — every target
+mirrors a script in `package.json`. If you prefer, you can call `yarn build:prod`
+or any other script directly. See [`setup.md`](./docs/contributing/setup.md) for
+first-time developer setup, including platform-specific prerequisites.
+
+### What `make build` actually does
+
+`make build` runs `yarn build:prod`, which:
+
+1. Webpack-compiles the renderer and main process bundles in production mode
+   (with `--max_old_space_size=4096` so large dependency graphs fit in memory).
+2. Invokes `script/build.ts`, which:
+   - Cleans the previous distribution from `out/`.
+   - Copies static resources, emoji, license dumps, and the Copilot SDK runtime.
+   - Runs `@electron/packager` to produce a platform-specific app bundle
+     (macOS `.app`, Windows `.exe`, Linux unpacked dir, depending on host).
+3. On macOS, signs the bundle with the developer certificate configured in your
+   local keychain. On CI, this step is skipped unless `CSC_LINK` / `CSC_KEY_PASSWORD`
+   are set.
+
+Artifacts land in `out/`. To launch them directly, run `make start:prod` (which
+uses `script/start.ts` to run the packaged binary with the current source tree).
+
+## AI agents and LLM configuration
+
+GitHub Desktop uses [GitHub Copilot](https://github.com/features/copilot) as the
+default AI agent for commit message suggestions, merge conflict resolution, and
+other in-app assistance. The Copilot SDK ships as a bundled native runtime
+(`@github/copilot-sdk-*`) so the app works without any extra setup once you sign
+in.
+
+You are not limited to Copilot's hosted models — Desktop also lets you plug in
+your own LLM provider and pick a different model per feature.
+
+### Built-in Copilot
+
+1. Open **Preferences → Copilot** and sign in with your GitHub account.
+2. Pick a Copilot model in the dropdown for each feature (commit messages,
+   conflict resolution, summaries).
+3. Your selection is remembered per feature.
+
+### Bring Your Own Key (BYOK)
+
+If you want to use your own model, open **Preferences → Copilot → Custom
+Providers** and add a provider. Secrets (API keys / bearer tokens) are stored
+in the OS keychain, never in `localStorage`.
+
+| Provider                | Base URL pattern                          | Auth             | Wire API                  |
+|-------------------------|-------------------------------------------|------------------|---------------------------|
+| OpenAI / OpenAI-compatible | `https://<your-endpoint>/v1`          | API key or bearer| Chat completions / Responses (GPT-5) |
+| Azure OpenAI            | `https://<resource>.openai.azure.com/`    | API key          | Chat completions          |
+| Anthropic               | `https://api.anthropic.com`               | API key          | Anthropic native          |
+| Ollama (local)          | `http://localhost:11434/v1`               | **None**         | Chat completions          |
+
+Adding a local Ollama model:
+
+```shellsession
+$ ollama serve                  # start the local server on :11434
+$ ollama pull llama3.1          # pull the model you want Desktop to use
+```
+
+Then in Desktop add a **Custom Provider** with type `Ollama (local)`,
+base URL `http://localhost:11434/v1`, authentication `None`, and the model IDs
+you pulled (e.g. `llama3.1`). The model will appear in every Copilot feature's
+model picker alongside the hosted Copilot models.
+
+Because any **OpenAI-compatible** endpoint works, you can also point the BYOK
+configuration at other gateways — LM Studio, vLLM, OpenRouter, Groq, Together,
+and similar — without code changes. Pick **OpenAI / OpenAI-compatible** as the
+provider type and enter their base URL.
+
+### Picking a different AI agent per feature
+
+For each Copilot-powered feature you can pick a different model — mixing hosted
+Copilot models and your own BYOK providers:
+
+1. Open **Preferences → Copilot**.
+2. Choose the feature (e.g. *Commit messages*, *Conflict resolution*).
+3. Pick a model from the dropdown. The list contains every Copilot model and
+   every model from each configured BYOK provider.
+4. Save. The selection is remembered per feature.
+
+Typical combinations:
+
+- **Hosted Copilot everywhere** — simplest setup, sign in once.
+- **Anthropic Claude for commit messages, OpenAI GPT-5 for conflict resolution**
+  — use the model that is best at each task.
+- **Local Ollama for sensitive work, hosted Copilot for everything else** — keep
+  private code on your machine while still benefiting from Copilot on public
+  repos.
 
 ## More Resources
 

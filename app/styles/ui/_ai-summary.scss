@@ -1,0 +1,135 @@
+// AI Summary preferences tab
+.ai-summary-prefs {
+  h2 {
+    margin-bottom: var(--spacing);
+  }
+
+  .description {
+    color: var(--text-secondary-color);
+    margin-bottom: var(--spacing);
+  }
+
+  .active-provider-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-half);
+    margin-bottom: var(--spacing);
+
+    select {
+      flex-grow: 1;
+    }
+  }
+
+  .empty-state {
+    color: var(--text-secondary-color);
+    border: 1px dashed var(--box-border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-double);
+    text-align: center;
+    margin-bottom: var(--spacing);
+
+    p {
+      margin-bottom: 0;
+    }
+  }
+
+  .provider-list {
+    list-style: none;
+    margin: 0 0 var(--spacing) 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-half);
+  }
+
+  .provider-card {
+    border: 1px solid var(--box-border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-half) var(--spacing);
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-third);
+      margin-bottom: var(--spacing-third);
+    }
+  }
+
+  .kind-badge {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary-color);
+    border: 1px solid var(--box-border-color);
+    border-radius: var(--border-radius);
+    padding: 0 var(--spacing-third);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-third);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-third);
+
+    &.muted {
+      color: var(--text-secondary-color);
+    }
+
+    &.success {
+      color: var(--status-success-color);
+    }
+
+    &.error {
+      color: var(--dialog-error-color);
+    }
+  }
+
+  .card-actions {
+    display: flex;
+    gap: var(--spacing-half);
+  }
+
+  .add-buttons {
+    display: flex;
+    gap: var(--spacing-half);
+    margin-bottom: var(--spacing);
+  }
+
+  .error-hint {
+    color: var(--dialog-error-color);
+    font-size: var(--font-size-sm);
+  }
+
+  .hint-label {
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-sm);
+    margin-bottom: 0;
+  }
+
+  .quick-pick-label {
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-sm);
+    margin-bottom: 0;
+  }
+
+  .quick-pick-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-third);
+    margin-bottom: var(--spacing);
+  }
+
+  .install-hint {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary-color);
+  }
+
+  .disclaimer-row {
+    margin-top: var(--spacing);
+  }
+}
+
+.ai-summary-error-code {
+  color: var(--text-secondary-color);
+  font-size: var(--font-size-sm);
+}

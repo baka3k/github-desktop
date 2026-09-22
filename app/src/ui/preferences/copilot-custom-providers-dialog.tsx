@@ -112,6 +112,8 @@ export class CopilotCustomProvidersDialog extends React.Component<ICopilotCustom
         return 'Azure'
       case 'anthropic':
         return 'Anthropic'
+      case 'ollama':
+        return 'Ollama (local)'
     }
   }
 }

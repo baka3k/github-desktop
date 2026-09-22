@@ -158,6 +158,28 @@ describe('loadBYOKProviders URL validation', () => {
   })
 })
 
+describe('Ollama BYOK provider', () => {
+  const ollamaProvider: IBYOKProvider = {
+    id: 'ollama-local',
+    name: 'Local Ollama',
+    type: 'ollama',
+    baseUrl: 'http://localhost:11434/v1',
+    wireApi: 'completions',
+    authKind: 'none',
+    models: [{ id: 'llama3.1', name: 'Llama 3.1' }],
+  }
+
+  it('round-trips an Ollama provider with authKind=none', () => {
+    saveBYOKProviders([ollamaProvider])
+    assert.deepStrictEqual(loadBYOKProviders(), [ollamaProvider])
+  })
+
+  it('survives a localStorage round-trip alongside OpenAI providers', () => {
+    saveBYOKProviders([sampleProvider, ollamaProvider])
+    assert.deepStrictEqual(loadBYOKProviders(), [sampleProvider, ollamaProvider])
+  })
+})
+
 describe('isLocalBaseUrl', () => {
   it('matches localhost and 127.0.0.1', () => {
     assert.strictEqual(isLocalBaseUrl('http://localhost:11434'), true)

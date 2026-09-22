@@ -138,6 +138,11 @@ import {
   ICopilotResolutionSummary,
 } from '../../lib/copilot-conflict-resolution'
 import { WorktreeEntry } from '../../models/worktree'
+import type {
+  AIProviderIPCResult,
+  IAISummaryConfig,
+  IAISummaryProviderConfig,
+} from '../../lib/ai-summary'
 
 /**
  * An error handler function.
@@ -1197,6 +1202,26 @@ export class Dispatcher {
 
   public cancelGenerateCommitMessage(repository: Repository) {
     return this.appStore._cancelGenerateCommitMessage(repository)
+  }
+
+  public setAISummaryConfig(config: IAISummaryConfig): void {
+    this.appStore._setAISummaryConfig(config)
+  }
+
+  public upsertAISummaryProvider(provider: IAISummaryProviderConfig): void {
+    this.appStore._upsertAISummaryProvider(provider)
+  }
+
+  public async deleteAISummaryProvider(id: string): Promise<void> {
+    return this.appStore._deleteAISummaryProvider(id)
+  }
+
+  public setActiveAISummaryProvider(providerId: string | null): void {
+    this.appStore._setActiveAISummaryProvider(providerId)
+  }
+
+  public async testAISummaryProvider(id: string): Promise<AIProviderIPCResult> {
+    return this.appStore._testAISummaryProvider(id)
   }
 
   /**

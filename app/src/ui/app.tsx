@@ -182,7 +182,13 @@ import { sendNonFatalException } from '../lib/helpers/non-fatal-exception'
 import { ICustomIntegration } from '../lib/custom-integration'
 import { createCommitURL } from '../lib/commit-url'
 import { InstallingUpdate } from './installing-update/installing-update'
-import { DialogStackContext } from './dialog'
+import {
+  DialogStackContext,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+} from './dialog'
+import { OkCancelButtonGroup } from './dialog/ok-cancel-button-group'
 import { TestNotifications } from './test-notifications/test-notifications'
 import { NotificationsDebugStore } from '../lib/stores/notifications-debug-store'
 import { PullRequestComment } from './notifications/pull-request-comment'
@@ -1780,6 +1786,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             alwaysUseCopilotForConflictResolution={
               this.state.alwaysUseCopilotForConflictResolution
             }
+            aiSummaryConfig={this.state.aiSummaryConfig}
           />
         )
       case PopupType.CopilotUserSettings:
@@ -2882,6 +2889,67 @@ export class App extends React.Component<IAppProps, IAppState> {
           >
             Review and edit the generated message carefully before use.
           </CopilotDisclaimer>
+        )
+      }
+      case PopupType.AISummaryNoProvider: {
+        const onConfigure = () => {
+          this.props.dispatcher.closePopup()
+          this.showPopup({
+            type: PopupType.Preferences,
+            initialSelectedTab: PreferencesTab.AISummary,
+          })
+        }
+        return (
+          <Dialog
+            id="ai-summary-no-provider"
+            title="No AI provider configured"
+            // eslint-disable-next-line react/jsx-no-bind
+            onSubmit={onConfigure}
+            onDismissed={onPopupDismissedFn}
+          >
+            <DialogContent>
+              <p>
+                To generate a commit message with AI, you need either a GitHub
+                Copilot license or a configured provider (external CLI /
+                OpenAI-compatible endpoint).
+              </p>
+              <p>
+                Sign in with GitHub Copilot, or set up an external CLI like
+                Claude Code / Gemini / Opencode from the command line before
+                continuing.
+              </p>
+            </DialogContent>
+            <DialogFooter>
+              <OkCancelButtonGroup
+                okButtonText="Configure AI providers"
+                cancelButtonText="Dismiss"
+                onCancelButtonClick={onPopupDismissedFn}
+              />
+            </DialogFooter>
+          </Dialog>
+        )
+      }
+      case PopupType.AISummaryError: {
+        const { message, code } = popup
+        return (
+          <Dialog
+            id="ai-summary-error"
+            title="Could not generate commit message"
+            onSubmit={onPopupDismissedFn}
+            onDismissed={onPopupDismissedFn}
+          >
+            <DialogContent>
+              <p>{message}</p>
+              {code !== undefined && (
+                <p className="ai-summary-error-code">
+                  Error code: <code>{code}</code>
+                </p>
+              )}
+            </DialogContent>
+            <DialogFooter>
+              <OkCancelButtonGroup cancelButtonText="Close" />
+            </DialogFooter>
+          </Dialog>
         )
       }
       case PopupType.CopilotConflictResolutionDisclaimer: {
