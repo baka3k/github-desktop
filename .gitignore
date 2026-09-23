@@ -38,7 +38,3 @@ compile_commands.json
 # wrong package manager.
 pnpm-lock.yaml
 
-# Work-in-progress feature branches. These folders are part of an ongoing
-# experiment that isn't ready to ship; remove the entry below when the
-# feature lands and the files are tracked.
-docs/plans/
