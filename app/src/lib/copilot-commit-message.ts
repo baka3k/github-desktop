@@ -8,38 +8,86 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function parseCopilotCommitMessage(
-  content: string
-): ICopilotCommitMessage {
-  const jsonMatch =
-    content.match(/```json\s*([\s\S]*?)```/) ||
-    content.match(/```\s*([\s\S]*?)```/)
-  const jsonStr = jsonMatch ? jsonMatch[1].trim() : content.trim()
+/**
+ * Reasoning models (DeepSeek-R1, Qwen in thinking mode, …) commonly emit
+ * their chain of thought before the answer, which defeats any naive parse
+ * of the raw response.
+ */
+const ReasoningBlockPattern = /<think>[\s\S]*?<\/think>/gi
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(jsonStr)
-  } catch {
-    throw new Error(
-      'Copilot returned invalid JSON for commit message generation'
-    )
+/** Upper bound for the response snippet included in parse failures. */
+const PreviewLength = 200
+
+/** Collapses `text` to a single short line for error messages. */
+function preview(text: string): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim()
+  return oneLine.length > PreviewLength
+    ? `${oneLine.slice(0, PreviewLength)}…`
+    : oneLine
+}
+
+/**
+ * Extracts the first balanced `{ … }` object from `text`, honoring string
+ * literals and escape sequences, so a JSON payload embedded in prose
+ * ("Here's the commit message: { … }") can still be recovered. Returns
+ * null when no complete object is present.
+ */
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start === -1) {
+    return null
   }
 
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{') {
+      depth++
+    } else if (ch === '}') {
+      depth--
+      if (depth === 0) {
+        return text.slice(start, i + 1)
+      }
+    }
+  }
+
+  return null
+}
+
+/** Validates a parsed payload and maps it to an {@link ICopilotCommitMessage}. */
+function toCommitMessage(parsed: unknown): ICopilotCommitMessage {
   if (!isRecord(parsed)) {
     throw new Error(
-      'Copilot returned an invalid commit message payload: expected an object'
+      'The AI provider returned an invalid commit message payload: expected an object'
     )
   }
 
   const title = parsed.title
   if (typeof title !== 'string' || title.trim().length === 0) {
     throw new Error(
-      'Copilot returned an invalid commit message payload: "title" must be a non-empty string'
+      'The AI provider returned an invalid commit message payload: "title" must be a non-empty string'
     )
   }
 
   const description = parsed.description
-  if (description === undefined) {
+  if (description === undefined || description === null) {
     return {
       title,
       description: '',
@@ -48,7 +96,7 @@ export function parseCopilotCommitMessage(
 
   if (typeof description !== 'string') {
     throw new Error(
-      'Copilot returned an invalid commit message payload: "description" must be a string when provided'
+      'The AI provider returned an invalid commit message payload: "description" must be a string when provided'
     )
   }
 
@@ -56,4 +104,45 @@ export function parseCopilotCommitMessage(
     title,
     description,
   }
+}
+
+/**
+ * Parses the raw AI response into an {@link ICopilotCommitMessage}.
+ *
+ * Models are loose about formatting, so beyond a plain JSON object this
+ * accepts fenced code blocks (with or without a language tag, matched
+ * case-insensitively), responses with reasoning blocks stripped, and
+ * JSON embedded in surrounding prose. When nothing parses, the error
+ * carries a short snippet of the raw response so misbehaving providers
+ * can be diagnosed.
+ */
+export function parseCopilotCommitMessage(
+  content: string
+): ICopilotCommitMessage {
+  const cleaned = content.replace(ReasoningBlockPattern, '')
+  const fenced =
+    cleaned.match(/```json\s*([\s\S]*?)```/i) ||
+    cleaned.match(/```\s*([\s\S]*?)```/)
+
+  const candidates = [
+    fenced?.[1]?.trim(),
+    cleaned.trim(),
+    extractFirstJsonObject(cleaned),
+  ].filter((c): c is string => typeof c === 'string' && c.length > 0)
+
+  for (const candidate of candidates) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(candidate)
+    } catch {
+      continue
+    }
+    return toCommitMessage(parsed)
+  }
+
+  throw new Error(
+    `The AI provider returned invalid JSON for commit message generation. Response started with: "${preview(
+      cleaned
+    )}"`
+  )
 }

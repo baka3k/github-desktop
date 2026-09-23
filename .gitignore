@@ -41,7 +41,4 @@ pnpm-lock.yaml
 # Work-in-progress feature branches. These folders are part of an ongoing
 # experiment that isn't ready to ship; remove the entry below when the
 # feature lands and the files are tracked.
-app/src/lib/ai-summary/
-app/src/main-process/ai-summary/
-app/test/unit/ai-summary/
 docs/plans/

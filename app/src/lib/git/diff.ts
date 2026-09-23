@@ -592,16 +592,22 @@ export async function getFilesDiffText(
   ]
   const successExitCodes = new Set([0])
 
-  const { stdout } = await git(args, repository.path, 'getFilesDiffText', {
+  const result = await git(args, repository.path, 'getFilesDiffText', {
     successExitCodes,
     encoding: 'buffer',
   })
+  let stdout = result.stdout
 
   await unstageAll(repository)
 
-  // No more than 10MB
+  // Cap the diff at 10MB to keep memory bounded. The output is only fed
+  // into AI commit message generation (which trims it further to fit the
+  // model context), so oversize output is truncated instead of failing.
   if (stdout.length > 10 * 1024 * 1024) {
-    throw new Error('Diff is too large to render')
+    log.warn(
+      `Diff from ${repository.path} is ${stdout.length} bytes, truncating to 10MB`
+    )
+    stdout = stdout.subarray(0, 10 * 1024 * 1024)
   }
 
   // `.toString()` in a promise in case its a large buffer
