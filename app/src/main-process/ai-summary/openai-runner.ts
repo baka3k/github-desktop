@@ -124,7 +124,9 @@ export async function runOpenAICompatSummary(
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.2,
-          max_tokens: 512,
+          // Room for the full JSON object; 512 truncated long descriptions
+          // mid-object, which no strict parse could recover.
+          max_tokens: 1024,
         }
 
   const controller = new AbortController()

@@ -60,6 +60,62 @@ describe('parseCopilotCommitMessage', () => {
     assert.deepEqual(result, { title: 'Fix bug', description: '' })
   })
 
+  it('recovers a response truncated mid-string by the token cap', () => {
+    const result = parseCopilotCommitMessage(
+      '{"title": "Port addbook-wave1 cluster", "description": "Adds the addbook.frm wave-1 port: plan.md, BASELINE, block-st'
+    )
+
+    assert.deepEqual(result, {
+      title: 'Port addbook-wave1 cluster',
+      description:
+        'Adds the addbook.frm wave-1 port: plan.md, BASELINE, block-st',
+    })
+  })
+
+  it('recovers a response truncated after a complete value', () => {
+    const result = parseCopilotCommitMessage(
+      '{"title": "Fix bug", "description": "Fixes the bug", '
+    )
+
+    assert.deepEqual(result, {
+      title: 'Fix bug',
+      description: 'Fixes the bug',
+    })
+  })
+
+  it('escapes raw control characters inside strings', () => {
+    const result = parseCopilotCommitMessage(
+      '{"title": "Fix bug", "description": "First line\nSecond line\tindented"}'
+    )
+
+    assert.deepEqual(result, {
+      title: 'Fix bug',
+      description: 'First line\nSecond line\tindented',
+    })
+  })
+
+  it('repairs invalid escape sequences such as Windows paths', () => {
+    const result = parseCopilotCommitMessage(
+      '{"title": "Fix bug", "description": "Touches app\\src\\lib files"}'
+    )
+
+    assert.deepEqual(result, {
+      title: 'Fix bug',
+      description: 'Touches app\\src\\lib files',
+    })
+  })
+
+  it('removes a trailing comma before the closing brace', () => {
+    const result = parseCopilotCommitMessage(
+      '{"title": "Fix bug", "description": "Fixes the bug",}'
+    )
+
+    assert.deepEqual(result, {
+      title: 'Fix bug',
+      description: 'Fixes the bug',
+    })
+  })
+
   it('rejects an empty title', () => {
     assert.throws(
       () => parseCopilotCommitMessage('{"title": "", "description": "d"}'),

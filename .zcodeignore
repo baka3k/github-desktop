@@ -1,0 +1,70 @@
+out/
+dist/
+node_modules/
+coverage/
+npm-debug.log
+yarn-error.log
+app/node_modules/
+vendor/windows-argv-parser/build/
+vendor/desktop-notifications/build/
+vendor/desktop-trampoline/build/
+.DS_Store
+.awcache
+.idea/
+.vs/
+.vscode/*.log
+.eslintcache
+*.iml
+.envrc
+junit*.xml
+*.swp
+tslint-rules/
+playwright-videos/
+.cache/
+.serena/
+
+# Local agent / harness caches (added by Mavis / Serena / cortext-harness
+# running against this repo). Safe to ignore — regenerable from tooling state.
+.cortext-harness/
+.scratch/
+dist-debug/
+
+# Generated build metadata — produced by clangd / VS Code's "Compile Database"
+# feature. Not source-of-truth; regenerate with `bear` or your editor.
+compile_commands.json
+
+# pnpm is not used by this project (yarn only). The presence of pnpm-lock.yaml
+# alongside yarn.lock usually means a stray editor/IDE accidentally picked the
+# wrong package manager.
+pnpm-lock.yaml
+
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

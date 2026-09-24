@@ -71,6 +71,107 @@ function extractFirstJsonObject(text: string): string | null {
   return null
 }
 
+/** Escapes a raw control character so it is valid inside a JSON string. */
+function escapeControlCharacter(ch: string): string {
+  switch (ch) {
+    case '\b':
+      return '\\b'
+    case '\f':
+      return '\\f'
+    case '\n':
+      return '\\n'
+    case '\r':
+      return '\\r'
+    case '\t':
+      return '\\t'
+    default:
+      return `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`
+  }
+}
+
+/** Escape sequences JSON.parse accepts after a backslash. */
+const ValidEscapeCharacters = '"\\/bfnrtu'
+
+/**
+ * Last-resort recovery for responses that are almost a JSON object:
+ * output truncated by the provider's token cap, raw control characters
+ * inside strings, invalid escape sequences (e.g. Windows paths like
+ * `app\src`), or a trailing comma. Walks the same balanced-brace state
+ * machine as {@link extractFirstJsonObject} while fixing those faults in
+ * place, and closes any string or braces the provider left open when the
+ * input ends mid-object. Returns null when the text contains no object.
+ */
+function repairJsonObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start === -1) {
+    return null
+  }
+
+  let repaired = ''
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        if (ch === 'u' && !/^[0-9a-fA-F]{4}/.test(text.slice(i + 1, i + 5))) {
+          repaired += '\\u'
+          continue
+        }
+        repaired += ch
+        continue
+      }
+
+      if (ch === '\\') {
+        const next = text[i + 1]
+        if (next !== undefined && !ValidEscapeCharacters.includes(next)) {
+          repaired += '\\\\'
+        } else {
+          escaped = true
+          repaired += ch
+        }
+        continue
+      }
+
+      if (ch === '"') {
+        inString = false
+      } else if (ch < ' ') {
+        repaired += escapeControlCharacter(ch)
+        continue
+      }
+      repaired += ch
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{') {
+      depth++
+    } else if (ch === '}') {
+      depth--
+      if (depth === 0) {
+        return `${repaired.replace(/,\s*$/, '')}${ch}`
+      }
+    }
+    repaired += ch
+  }
+
+  if (inString) {
+    // A dangling backslash would escape the appended closing quote and
+    // leave the string unterminated.
+    if (escaped) {
+      repaired = repaired.slice(0, -1)
+    }
+    repaired += '"'
+  }
+  repaired = repaired.replace(/,\s*$/, '')
+  return `${repaired}${'}'.repeat(depth)}`
+}
+
 /** Validates a parsed payload and maps it to an {@link ICopilotCommitMessage}. */
 function toCommitMessage(parsed: unknown): ICopilotCommitMessage {
   if (!isRecord(parsed)) {
@@ -112,9 +213,11 @@ function toCommitMessage(parsed: unknown): ICopilotCommitMessage {
  * Models are loose about formatting, so beyond a plain JSON object this
  * accepts fenced code blocks (with or without a language tag, matched
  * case-insensitively), responses with reasoning blocks stripped, and
- * JSON embedded in surrounding prose. When nothing parses, the error
- * carries a short snippet of the raw response so misbehaving providers
- * can be diagnosed.
+ * JSON embedded in surrounding prose. As a last resort it repairs
+ * near-miss payloads — output truncated by the provider's token cap,
+ * raw control characters inside strings, invalid escape sequences, or a
+ * trailing comma. When nothing parses, the error carries a short snippet
+ * of the raw response so misbehaving providers can be diagnosed.
  */
 export function parseCopilotCommitMessage(
   content: string
@@ -128,6 +231,7 @@ export function parseCopilotCommitMessage(
     fenced?.[1]?.trim(),
     cleaned.trim(),
     extractFirstJsonObject(cleaned),
+    repairJsonObject(cleaned),
   ].filter((c): c is string => typeof c === 'string' && c.length > 0)
 
   for (const candidate of candidates) {
